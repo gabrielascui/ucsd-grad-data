@@ -1,0 +1,306 @@
+---
+title: "UCSD_COL_survey_2020"
+author: "Gabriel Ascui"
+date: "5/23/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## UCSD Cost-of-Living GSA survey 2020
+
+Data collection and survey design by Laura Chapman (Biological Sciences PhD) and Analyzed by Gabriel Ascui (Biomedical Sciences PhD) and Axel Wenzel (Bioinformatics PhD)
+
+Version 3.0.0
+
+### Load Data:
+
+```{r load data}
+data <- read.delim(file = "grad_data_censored.tsv", row.names = NULL, check.names = FALSE)
+data[,-c(1)] -> data
+```
+
+## Libraries 
+
+Data wragglying based on `tidyverse`. 
+
+```{r libraries}
+library(tidyverse)
+library(ggplot2)
+library(knitr)
+library(scales) # for percent()
+library(ggrepel)
+library(choroplethr)
+library(choroplethrZip)
+library(viridis)
+```
+
+# Sample Description
+
+*Total Answers per graduate program*
+
+`t.data` is a table to summary all the answers so for per graduate program
+
+```{r freq grad programs}
+t.data <- data.frame(table(data$grad_program))
+sum(t.data$Freq)
+ggplot(t.data, aes(reorder(Var1, Freq), Freq)) + geom_bar(stat="identity") + coord_flip()
+```
+
+## PhD Sample Primarily Finacial Supported
+
+How are you primarily finacially supported in your graduate program?
+
+```{r PhD Primary Financial Support}
+phd.data <- data %>% filter(deg_type_CAT == "PhD")
+t.data <- table(phd.data$support_period_CAT)
+addmargins(t.data)
+t.data <- cbind(t.data, prop.table(t.data)*100)
+colnames(t.data) <- c("Freq", "Percentage")
+t.data <- as.data.frame(t.data)
+t.data[-1,] -> t.data 
+ggplot(t.data, aes(x = "", Percentage, fill=rownames(t.data))) + geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) + theme_minimal()
+head(t.data)
+```
+
+## Other graduate students (MS/MAE/MD PhD/others)
+
+```{r}
+other.data <- data %>% filter(deg_type_CAT != "PhD")
+t.data <- table(other.data$support_period_CAT)
+addmargins(t.data)
+t.data <- cbind(t.data, prop.table(t.data)*100)
+colnames(t.data) <- c("Freq", "Percentage")
+t.data <- as.data.frame(t.data)
+t.data[-1,] -> t.data 
+ggplot(t.data, aes(x = "", Percentage, fill=rownames(t.data))) + geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) + theme_minimal()
+head(t.data)
+## other programs bar_graph responses per program
+t.data <- data.frame(table(other.data$grad_program))
+sum(t.data$Freq)
+ggplot(t.data, aes(reorder(Var1, Freq), Freq)) + geom_bar(stat="identity") + coord_flip()
+## other programs pie_graph responses per program
+t.data <- table(other.data$grad_program)
+addmargins(t.data)
+t.data <- cbind(t.data, prop.table(t.data)*100)
+colnames(t.data) <- c("Freq", "Percentage")
+t.data <- as.data.frame(t.data)
+ggplot(t.data, aes(x = "", Percentage, fill=rownames(t.data))) + geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) + theme_minimal()
+```
+
+# Other than PhDs (MS/MA/etc)
+
+## Rent Burden Calculations 
+
+```{r Rent burden calculation 1}
+other.data$income <- parse_number(as.character(other.data$grad_prog_comp), )
+other.data$h_expense <- parse_number(as.character(other.data$rent_month))
+other.data$rent_burden <- as.numeric(round((other.data$h_expense/(other.data$income/12))*100, 2))
+```
+
+## Rent burden box_plots
+
+```{r}
+other.data %>% 
+  ggplot(aes(x = grad_program, y = rent_burden, fill = grad_program)) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = 1.75),size=1,color="black") +
+  geom_boxplot(outlier.size = 1, color="black",lwd=1.2, alpha = 0.7, ) +
+  geom_point( shape = 21,size=2, position = position_jitterdodge(), color="black",alpha=1) +
+  guides(fill=FALSE) + 
+  ylim(0,100) + 
+  geom_hline(yintercept = 30, colour = "red") +
+  coord_flip()
+```
+
+93 out of 138 responders indicate they do not recieve any compensations from UCSD. ***## check these number for new dataset!!! 55/88***
+
+If we assume that rent burden is higher than 100% when there is no salary, we generate the following graph. ***This assumption may not be correct.*** 
+
+```{r}
+other.data %>% mutate(rent_burden = ifelse(rent_burden > 100, 100, rent_burden)) -> other.data ## assuming rent burden as 100% if no salary
+
+other.data %>% 
+  ggplot(aes(x = grad_program, y = rent_burden, fill = grad_program)) + 
+  #geom_violin() + 
+  geom_boxplot(width=0.5) + 
+  guides(fill=FALSE) + 
+  ylim(0,100) + 
+  geom_hline(yintercept = 30, colour = "red") +
+  coord_flip()
+## this assumption may not be the correct
+```
+
+
+# PhD Students sample
+
+## Summary current resident on/off-campus
+
+```{r on/off campus}
+t.data <- data.frame(table(phd.data$on_campus))
+t.data$perc <- t.data$Freq/sum(t.data$Freq)*100
+ggplot(t.data, aes(reorder(Var1, Freq), perc, fill = Var1)) + geom_bar(stat="identity") + coord_flip() + theme(legend.position = "none")
+t.data
+```
+
+## Map of Housing of UCSD PhD students
+
+Zip codes of our UCSD PhD student sample.
+
+```{r zipcode map test}
+## Download source file, unzip and extract into table
+ZipCodeSourceFile = "http://download.geonames.org/export/zip/US.zip"
+temp <- tempfile()
+download.file(ZipCodeSourceFile , temp)
+ZipCodes <- read.table(unz(temp, "US.txt"), sep="\t")
+unlink(temp)
+names(ZipCodes) = c("CountryCode", "zip", "PlaceName", 
+"AdminName1", "AdminCode1", "AdminName2", "AdminCode2", 
+"AdminName3", "AdminCode3", "latitude", "longitude", "accuracy")
+## phd.df$zip_code
+ZC <- data.frame(table(phd.data$zip))
+colnames(ZC) <- c("zip", "Freq")
+ZC_Info = merge(ZC, ZipCodes[,c(2:6,10:11)])
+ZC_Info$Percentage <- round((ZC_Info$Freq/sum(ZC_Info$Freq))*100, 2)
+ZC_Info %>% filter(AdminName2 == "San Diego") %>% select(region = zip, value = Freq, PlaceName, AdminName2) -> z.df
+## missing San Diego zip_codes
+m_zip <- data.frame(
+  region = as.factor(c(92027, 92066, 91934, 91917, 92061, 91910, 92134, 92060, 91915, 91963, 92028, 92086, 92119, 92135, 92145, 92173, 92154, 91906, 91916, 92003, 92007, 91948, 92672, 92010, 92019, 92021, 92029, 92057, 92059, 92078, 92091, 92114, 92124, 92118, 91914, 92084, 92025, 92054, 92069, 91935, 91913, 92128, 91978, 91931, 91905, 92139, 91932, 91980, 92004, 92036, 92055, 92065, 92070, 92082, 92147, 92140, 92132, 92155, 91962, 92040, 92014, 92011, 92008, 92064, 92071, 91902, 92127, 92129, 92120)),
+  value = 0
+)  ## replace this with all the SD AdminName2 from the ZipCodes object minus the zip codes in z.df ## should lookup the rest of the zipcodes for easier graph thing.
+z.df <- bind_rows(z.df, m_zip)
+## plot
+zip_choropleth(z.df, title = "Zip Code UCSD Students",
+               num_colors = 9,
+               msa_zoom  = "San Diego-Carlsbad, CA",
+               legend = "# UCSD PhD"
+               )
+```
+
+this doesn't work as well because zip_codes from San Diego County were redistributed recently........ 
+Need to update package....
+
+## Average Income per PhD program.
+
+`phd.data` is a data.frame with only the data of PhD students. 
+
+## Rent Burden Calculations 
+
+```{r Rent burden calculation}
+phd.data$income <- parse_number(as.character(phd.data$grad_prog_comp), )
+phd.data$h_expense <- parse_number(as.character(phd.data$rent_month))
+phd.data$rent_burden <- as.numeric(round((phd.data$h_expense/(phd.data$income/12))*100, 2))
+```
+
+## PhD program compensation 
+
+```{r phd income}
+ggplot(phd.data, aes(reorder(grad_program, FUN = median, income), income, fill=grad_program)) + geom_boxplot(outlier.colour="black", outlier.shape=NA,
+             outlier.size=2, notch=FALSE) + guides(fill=FALSE) + coord_flip() + theme_classic() + ylim(0,40000)
+```
+
+## Rent burden of PhD Students
+
+```{r Rent Burden}
+## Plot
+phd.data %>% 
+  ggplot(aes(x = primary_fin_sup_CAT, y = rent_burden, fill = primary_fin_sup_CAT)) + 
+  geom_violin(position = position_dodge(width = 3.75)) + 
+  geom_boxplot(width=0.25) + 
+  geom_point(shape = 21,size=1.2, position = position_jitterdodge(jitter.width = 0.8), color="black",alpha=0.5) +
+  guides(fill=FALSE) + ylim(0,100) + geom_hline(yintercept = 30, colour = "red") +
+  coord_flip()
+```
+
+## Rent Burden vs Number of Dependents.
+
+```{r number of dependents vs rent burden}
+## first plot 
+ggplot(phd.data, aes(x = on_campus, y = rent_burden, fill = n_dependents)) + geom_dotplot(binaxis='y', stackratio = 0.1, stackdir = 'center') +
+  coord_flip() + theme_classic() + ylim(0,100)
+## second plot
+phd.data %>% 
+  filter(rent_burden < 100.1 & rent_burden > 0) %>% 
+  ggplot(aes(x = on_campus, y = rent_burden, color = n_dependents)) +
+  geom_count() + scale_size_area(max_size = 10) +
+  scale_color_viridis(discrete = TRUE) +
+  coord_flip()
+```
+
+Concentration of PhD students with dependent living on-campus with high rent burden.
+
+## All PhD students rent burden violin_graph
+
+```{r All PhD rent burden, fig.width=1.5, fig.height=3}
+phd.data %>% 
+  ggplot(aes(x = deg_type_CAT, y = rent_burden, fill = deg_type_CAT)) + 
+  geom_violin() + 
+  geom_boxplot(width=0.1) + 
+  guides(fill=FALSE) + 
+  ylim(0,100) + 
+  geom_hline(yintercept = 30, colour = "red")
+```
+
+57 non-finite values. (divided by 0)
+
+## Statistics of Rent Burden of PhD Students 
+
+```{r Statistic Summary}
+phd.data %>% filter(rent_burden < 100.1) -> f.phd
+summary(f.phd$rent_burden)
+```
+
+From all PhD students, median of `rent_burden` is 40.00%, mean is 44.77% .
+
+## UCSD PhD student Assitance usage
+
+THe `grepl` function captures a pattern and gives a logical value.  
+
+```{r add NAs}
+phd.data$pub_assist_progs[phd.data$pub_assist_progs==""] <- NA
+```
+
+
+```{r assist}
+t.data = list()
+sum(!is.na(phd.data$pub_assist_progs)) ## number of responses
+## numbers
+phd.data$pub_assist_progs %>% grep(pattern = "Pantr", ignore.case = TRUE) %>% length() -> t.data[1] ## people using pantry
+phd.data$pub_assist_progs %>% grep(pattern = "iTable", ignore.case = TRUE) %>% length() -> t.data[2]
+phd.data$pub_assist_progs %>% grep(pattern = "Fresh", ignore.case = TRUE) %>% length() -> t.data[3]
+phd.data$pub_assist_progs %>% grep(pattern = "SDG", ignore.case = TRUE) %>% length() -> t.data[4]
+phd.data$pub_assist_progs %>% grep(pattern = "WIC", ignore.case = TRUE) %>% length() -> t.data[5]
+phd.data$pub_assist_progs %>% grep(pattern = "Medicaid", ignore.case = TRUE) %>% length() -> t.data[6]
+phd.data$pub_assist_progs %>% grep(pattern = "Medical", ignore.case = TRUE) %>% length() -> t.data[7]
+t.data <- data.frame(t.data) 
+colnames(t.data) <- c("Pantry", "iTable", "CalFresh", "SDGE","WIC", "Medicaid", "Medical")
+t.data <- data.frame(t(t.data))
+colnames(t.data) <- "Freq"
+## we like the pantry!
+t.data %>% 
+  ggplot(aes(x = reorder(row.names(t.data), Freq), y = Freq)) + geom_bar(stat="identity", fill = "steelblue") + 
+  geom_text(aes(label=Freq), hjust=-0.2, color="black", size=3.5) +
+  theme_minimal() +
+  coord_flip()
+```
+
+174/858 PhD students uses public assistant programs. 
+
+
+## Rent Burden by program. 
+
+This is a messy graph.
+
+```{r Rent Burden by program}
+## 
+
+phd.data %>% 
+  ggplot(aes(x = grad_program, y = rent_burden, fill = grad_program)) + 
+  geom_violin() + 
+  geom_boxplot(width=0.1) + 
+  guides(fill=FALSE) + ylim(0,100) + geom_hline(yintercept = 30, colour = "red") +
+  coord_flip() + theme(aspect.ratio = 1)
+```
