@@ -3,7 +3,7 @@ title: "UCSD_COL_survey_2020"
 author: "Gabriel Ascui"
 date: "5/23/2020"
 output:
-  html_document: default
+  html_document: rmarkdown::github_document
   pdf_document: default
 ---
 
