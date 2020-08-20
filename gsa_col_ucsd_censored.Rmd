@@ -4,7 +4,6 @@ author: "Gabriel Ascui"
 date: "5/23/2020"
 output:
   rmarkdown::github_document
-  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
